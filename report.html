@@ -1,0 +1,2608 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <meta name="author" content="Afrae Ahouzi, Beste Aydemir, Chengzhi Hu, Hermine Kleiner {ahouzi.afrae, beste.aydemir, chengzhi.hu, h.kleiner}@campus.lmu.de LMU Munich" />
+  <title>LaTeX Report</title>
+  <style type="text/css">
+      code{white-space: pre-wrap;}
+      span.smallcaps{font-variant: small-caps;}
+      span.underline{text-decoration: underline;}
+      div.column{display: inline-block; vertical-align: top; width: 50%;}
+  </style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">LaTeX Report</h1>
+<p class="author"><strong>Afrae Ahouzi, Beste Aydemir, Chengzhi Hu, Hermine Kleiner</strong><br />
+<code>{ahouzi.afrae, beste.aydemir, chengzhi.hu, h.kleiner}@campus.lmu.de</code><br />
+LMU Munich</p>
+</header>
+<p><strong>Abstract</strong></p>
+<p><em></em></p>
+<p>Large Language Models (LLMs) have recently found utility in a wide range of applications, due to their versatility and adaptability to input modalities beyond text, and the development of fine techniques that improve reasoning abilities. This has motivated further research on LLM agents, which can interact with their environment and must make decisions depending on real-time observed visual or sensor data. Autonomous driving is a notable example of such an application scenario, as driving decisions depend on video data produced in a streaming manner. Most work in video understanding, however, focuses on processing full videos. Our research centers around the setting of online video understanding in autonomous driving. We adapt existing datasets to the online setting and propose benchmarks for multiple tasks, relying on two different base models, which we equip with variably sized textual memory. Our evaluation shows that the models struggle with open-ended driving questions and the textual memory does not effectively amass information from the past. These identified limitations, among others, prompt further research in this novel setting.</p>
+<p>*<span>section</span><span>1</span><span>-10pt plus -2pt minus -2pt</span><span>7pt</span><span><strong></strong></span><span>-1em. Introduction</span> In recent years, the field of Large Language Models (LLMs) and LLM agents has witnessed a huge leap in progress. These models are no longer confined to generating text from prompts and answering questions; they now process diverse modalities, including audio and visual data <span class="citation" data-cites="arnab2021vivitvideovisiontransformer"></span> <span class="citation" data-cites="gabeur2020multimodaltransformervideoretrieval"></span> <span class="citation" data-cites="sun2019videobertjointmodelvideo"></span> <span class="citation" data-cites="radford2021learningtransferablevisualmodels"></span>, and can even output actions to interact with an environment. This rapid advancement is driven by the availability of extensive data, enabling the training and evaluation of LLMs’ perception, reasoning, and planning capabilities. This allowed new techniques to emerge, such as Chain-of-Thought prompting<span class="citation" data-cites="wei2022chain"></span>, instruction-tuning<span class="citation" data-cites="liu2024visual"></span>, in-context learning <span class="citation" data-cites="zhang2023mmnarratornarratinglongformvideos"></span>, domain-tuning, and various memory techniques <span class="citation" data-cites="zhang2024surveymemorymechanismlarge"></span> that facilitate the storage and retrieval of past experiences and knowledge.<br />
+Recent studies in vision language understanding for the video modality focus on general video understanding rather than specific types of videos. As we limit our research to ego-centric video understanding, many models are trained on a vast mix of high-level everyday-life video content and therefore, adapt badly to specific domains <span class="citation" data-cites="pan2023retrievingtoanswerzeroshotvideoquestion"></span> like autonomous driving settings which require fundamental reasoning and understanding capabilities.<br />
+To address this issue, our work focuses on a novel setting: processing visual data, specifically videos, in an online streaming setting, whereas most existing applications for visual LLM agents, which take the entire video as input, real-world scenarios often involve real-time visual input. For instance, in autonomous driving, an agent’s decision-making relies on the most recently generated data, emphasizing the importance of handling data in an online setting. To serve this new setting, we adapt the DriveLM annotations and NuScenes dataset to suit our new online video setting and train two simple and effective models with textual memory that we evaluate using different window sizes and frames per scene values.<br />
+In our experiments, we uncover a few key insights. First, it seems our base models struggle with open questions, while it does very well on yes/no and multiple choice questions. We got decreasing performance for tasks that required the LLM to freely generate text. This highlights the necessity for reformulating some ambiguous questions and for better prompting. We could not find any relevant relationship between window size and model performance. This could result from our dataset being biased, as the input question pertains to the most recent frames. In a scenario like this, changing the amount of windows seen in the past would not necessarily lead to an improvement. It could also be attributed to the fact that our memory structure does not accumulate. While passing the question to the model, we only pass the answer from the last frame, as the token number for the prompt is limited. For the model based on VideoLlava, our results confirm that 8 frames per scene seems to be the best setting.<br />
+Our contributions to this work are threefold:</p>
+<ol>
+<li><p>We use two different existing datasets to create an annotated VQA dataset that can be used in an online video setting and covers multiple dimensions of tasks.</p></li>
+<li><p>We propose two base models with textual memory that can serve as performance benchmarks and test them with different window sizes in the past and frames per scene (fps).</p></li>
+<li><p>We share some key insights and future work ideas gained during our experiments.</p></li>
+</ol>
+<p>Our work is organized into seven sections. In <a href="#sec:related-work" data-reference-type="ref" data-reference="sec:related-work">[sec:related-work]</a>, we give a high-level overview in the context of vision language models and the streaming video setting. Then, we define our task and the subtasks we benchmark in this work in <a href="#sec:benchmarks" data-reference-type="ref" data-reference="sec:benchmarks">[sec:benchmarks]</a>. In <a href="#sec:method" data-reference-type="ref" data-reference="sec:method">[sec:method]</a>, we present our method for organizing the data, using the base models and implementing the memory. We share our experimental setup and our results in <a href="#sec:experiments-results" data-reference-type="ref" data-reference="sec:experiments-results">[sec:experiments-results]</a>. And discuss the challenges and future work ideas that we encountered in <a href="#sec:limitation-future-work" data-reference-type="ref" data-reference="sec:limitation-future-work">[sec:limitation-future-work]</a>, to finally conclude our work in <a href="#sec:conclusion" data-reference-type="ref" data-reference="sec:conclusion">[sec:conclusion]</a>. *<span>section</span><span>1</span><span>-10pt plus -2pt minus -2pt</span><span>7pt</span><span><strong></strong></span><span>-1em. Related Work</span> <span id="sec:related-work" label="sec:related-work">[sec:related-work]</span></p>
+<p>Video understanding with language models <span class="citation" data-cites="sun2019videobertjointmodelvideo"></span> <span class="citation" data-cites="gabeur2020multimodaltransformervideoretrieval"></span> <span class="citation" data-cites="arnab2021vivitvideovisiontransformer"></span> <span class="citation" data-cites="radford2021learningtransferablevisualmodels"></span> has seen significant advancements, especially when leveraging the capabilities of large language models (LLMs) like GPT-4 <span class="citation" data-cites="openai2024gpt4technicalreport"></span> to analyze and interpret visual and temporal information from videos. The current state of the field integrates multimodal learning, where LLMs are combined with visual models to extract context, actions, and interactions from video content (Vid-LLMs) <span class="citation" data-cites="tang2024videounderstandinglargelanguage"></span>.</p>
+<h4 id="vision-language-models">Vision Language Models</h4>
+<p>usually work by unifying the text and image representations and forwarding them to a text decoder for text generation. Most models contain regular image and text encoders, an embedding projector, and a regular text decoder. The embedding projector (or a multimodal projector) aligns the image embeddings to a text representation. This makes images sensical to a text decoder. The projector is often a simple dense network that takes in the image embeddings and projects them to the textual embedding space. Models such as LLAVA <span class="citation" data-cites="liu2023llava"></span> adopt this approach. Other alternatives to handle different embeddings include the model BLIP’s approach <span class="citation" data-cites="li2022blipbootstrappinglanguageimagepretraining"></span>, where an unimodal encoder is trained with image-text contrastive loss to align both representations.</p>
+<h4 id="video-question-answering">Video Question-Answering</h4>
+<p>(VQA or VideoQA) aims to predict a correct textual answer <em>a<span class="math inline"><em></em><sup>*</sup></span></em> to a given textual question <em>q</em> on a reference video <em>V</em><span class="citation" data-cites="tang2024videounderstandinglargelanguage"></span> <span class="citation" data-cites="zhong2022videoquestionansweringdatasets"></span>. Therefore, novel Vid-LLMs are prompted with the question and the video, asking the model to analyze its visual (and maybe also auditive) content, understand its relevance related to the provided question, retrieve important information, and eventually generate an appropriate answer to the question <span class="citation" data-cites="pan2023retrievingtoanswerzeroshotvideoquestion"></span>. In general, there are two different types of VQA: multiple-choice QA and open-ended QA <span class="citation" data-cites="zhong2022videoquestionansweringdatasets"></span>.</p>
+<h4 id="streaming-video-approaches">Streaming Video Approaches</h4>
+<p>Most previous multimodal video models only process a fixed number of downsampled frames from an input video <span class="citation" data-cites="arnab2021vivitvideovisiontransformer"></span> <span class="citation" data-cites="fan2021multiscalevisiontransformers"></span> <span class="citation" data-cites="sun2019videobertjointmodelvideo"></span>, covering only a few seconds from the full video. They make their final prediction after processing the whole input sequence, rather than producing outputs before processing the entire video sequence in an on-the-fly manner like streaming video models aim to do <span class="citation" data-cites="zhou2024streamingdensevideocaptioning"></span>.<br />
+In parallel to this work, two contemporaneous works have addressed this problem by introducing streaming frameworks.<br />
+<br />
+<span class="citation" data-cites="chen2024videollmonlineonlinevideolarge"></span> introduce a text-based memory approach <strong>LIVE</strong>. They designed a streaming framework that combines language modelling with temporal annotations. This approach involves randomly inserting templated questions into the video timeline and providing LLMs with ground-truth video annotations, including their timestamps. The LLMs are then prompted to answer these questions within a specified time frame.<br />
+<br />
+In comparison, <span class="citation" data-cites="qian2024streaminglongvideounderstanding"></span> employ an encoding-based approach <strong>VideoStreaming</strong>. The <em>Memory-Propagated Streaming Encoding</em> architecture segments long videos into shorter clips and sequentially encodes each clip with a propagated memory. Following this encoding process, the <em>Adaptive Memory Selection</em> strategy selects a fixed number of question-relevant memories from the accumulated historical memories. These selected encodings are then given to the LLM for response. *<span>section</span><span>1</span><span>-10pt plus -2pt minus -2pt</span><span>7pt</span><span><strong></strong></span><span>-1em. Benchmark - Task Definition</span> <span id="sec:benchmarks" label="sec:benchmarks">[sec:benchmarks]</span> We introduce performance benchmarks for four tasks taken from the DriveLM dataset. Since our setting is different, and we do not focus on the graph structure of the DriveLM dataset and ignore the “Motion” task, the benchmarks presented in the DriveLM paper <span class="citation" data-cites="sima2024drivelmdrivinggraphvisual"></span> do not apply anymore. Using the questions in our dataset, we cover tasks along two dimensions: the temporal axis from the past to the future, and the complexity axis, which measures the task’s difficulty. It ranges in difficulty from simple perception, to seemingly more complicated prediction, planning, and behavior. We propose baselines using two different base models for each of the mentioned tasks (see table <a href="#tab:benchmark_table" data-reference-type="ref" data-reference="tab:benchmark_table">[tab:benchmark_table]</a>).</p>
+<table>
+<caption>Benchmark dimensions</caption>
+<thead>
+<tr class="header">
+<th style="text-align: left;"></th>
+<th style="text-align: left;"><strong>Perception</strong></th>
+<th style="text-align: left;"><strong>Reasoning</strong></th>
+<th style="text-align: left;"><strong>Planning</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><strong>Past</strong></td>
+<td style="text-align: left;">n/a</td>
+<td style="text-align: left;">not covered by our dataset</td>
+<td style="text-align: left;">n/a</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><strong>Present</strong></td>
+<td style="text-align: left;"><strong><span style="color: blue">perception</span></strong></td>
+<td style="text-align: left;">not covered by our dataset</td>
+<td style="text-align: left;">n/a</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><strong>Future</strong></td>
+<td style="text-align: left;">n/a</td>
+<td style="text-align: left;"><strong><span style="color: purple">prediction</span></strong></td>
+<td style="text-align: left;"><strong><span style="color: red">planning</span></strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"></td>
+<td style="text-align: left;"></td>
+<td style="text-align: left;"></td>
+<td style="text-align: left;"><strong><span style="color: orange">behavior</span></strong></td>
+</tr>
+</tbody>
+</table>
+<p><span id="tab:benchmark_table" label="tab:benchmark_table">[tab:benchmark_table]</span></p>
+<p>Due to memory and time constraints, we decide to only use the questions from the first keyframe blob and sample 99 questions for each of the tasks (see table <a href="#tab:dataset_tasktypes" data-reference-type="ref" data-reference="tab:dataset_tasktypes">[tab:dataset_tasktypes]</a>).</p>
+<table>
+<caption>Test set by question type for keyframe-blob01 of extended DriveLM dataset</caption>
+<thead>
+<tr class="header">
+<th style="text-align: left;"><strong>task</strong></th>
+<th style="text-align: center;"><strong>MC</strong></th>
+<th style="text-align: center;"><strong>Y/N</strong></th>
+<th style="text-align: center;"><strong>Open</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><strong><span style="color: orange">behavior</span></strong></td>
+<td style="text-align: center;">99</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><strong><span style="color: red">planning</span></strong></td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">21</td>
+<td style="text-align: center;">78</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><strong><span style="color: purple">prediction</span></strong></td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">44</td>
+<td style="text-align: center;">55</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><strong><span style="color: blue">perception</span></strong></td>
+<td style="text-align: center;">10</td>
+<td style="text-align: center;">20</td>
+<td style="text-align: center;">69</td>
+</tr>
+</tbody>
+</table>
+<p><span id="tab:dataset_tasktypes" label="tab:dataset_tasktypes">[tab:dataset_tasktypes]</span></p>
+<p>Within these 99 questions per task, report different distributions of task types, varying from simple decisive yes-no questions over multiple choice to open, free-generation tasks. *<span>section</span><span>1</span><span>-10pt plus -2pt minus -2pt</span><span>7pt</span><span><strong></strong></span><span>-1em. Methodology</span><span id="sec:method" label="sec:method">[sec:method]</span></p>
+<p>*<span>subsection</span><span>2</span><span>-8pt plus -2pt minus -2pt</span><span>6pt</span><span>-1em. Data Curation and Processing</span> In the following, we share our data selection and preprocessing steps.</p>
+<h3 id="data-requirements">Data Requirements</h3>
+<p>When choosing the dataset for our experiments, we prioritize using an ego dataset. Ego datasets are collections of visual data that are captured from a first-person perspective, thus providing an immersive and contextually rich view of the environment and the interactions of the ego with it. The rich context allows the usage of the dataset in a wide range of tasks, depending on the available annotation. This is especially important since we propose benchmarks for a newer setting. Thus, it is natural for us to prefer an ego dataset with annotation for perception/captioning, reasoning, and planning. Furthermore, to utilize the data in an online/streaming setting and try out different window sizes of the past, the videos must be long enough. An autonomous driving dataset, preferably open source, aligns well with our needs as the visual data captured by a car’s camera would be generated in real-time from an egocentric perspective.</p>
+<h3 id="drivelm-and-nuscenes">DriveLM and NuScenes</h3>
+<p>The DriveLM is a new graph vision QA dataset comprising single frames and their corresponding QA pairs. The questions cover multiple tasks: perception, prediction, planning, behavior, and motion. These are categorized in different types of questions as shown in <a href="#tab:dataset_tasktypes" data-reference-type="ref" data-reference="tab:dataset_tasktypes">[tab:dataset_tasktypes]</a>. The “Perception” questions inquire about the nature and properties of the objects visible in the frames, while the “Prediction” questions focus on the possible future moving status of the key objects in the frame and the “Planning” questions elicit possible safe driving decisions from the LLM, depending on the responses to the previous tasks. The “Behavior” questions are multiple-choice questions that get as input the answers from the questions of the tasks above and output the ego car’s next driving decision. Finally, the “Motion” questions use the answer for the task “Behavior” to predict the ego car’s future trajectory. Since we want to use real data, we restrict our data to the part extracted from NuScenes. This subset consists of 4871 frames undersampled from 696 scenes belonging to the training and validation set of the NuScenes data. On average, each frame is associated with 91 QA pairs. The original dataset, NuScenes, contains 1000 scenes, split into 850 for training and validation and 150 scenes for testing. Unlike DriveLM, NuScenes offers 40-41 frames for each of the six camera orientations for each scene. Additionally, the dataset contains timestamps for each frame, pointers from current frames to their previous and next frames, as well as similar information for the scenes. The scenes are organized in logs corresponding to driving sessions from a certain date and location, making it easier to connect multiple scenes if we want longer visual context for our questions. Although an annotated version named Nuscenes-QA exists, the annotations are limited to perception-related QA pairs, which leads us to prefer using a combination of both datasets.</p>
+<h3 id="extending-drivelm-with-nuscenes">Extending DriveLM with NuScenes</h3>
+<p>For each QA pair in the DriveLM dataset, we obtain the tokens for the keyframe and the key scene. We then use the token of the key scene, which is the same for the NuScenes dataset, to get the token of the corresponding log file. This allows us to reverse-search all the scenes that belong to that log and thus were taken on the same date and location. We then go scene by scene and construct a list of frames for each one. Each frame list is constructed by getting the token of the first frame of the scene, and then using the pointer to the next frame to get and append the rest of the rest of the frames within that scene. We also include the time steps for each frame to make sure that they are chronologically sorted. We then sample the correct number of frames per scene for the experiment run and only keep a specific number of windows in the past of the key frame. Once the sampling is done, the frames list is flattened. One should note here, that instead of using the same graph structure as the DriveLM dataset, we pass the frames list along with the key object information and the scene description.</p>
+<h3 id="preparing-data-for-experiments">Preparing Data for Experiments</h3>
+<p><strong>Splitting</strong> Contrary to the usual definition of a window, defined as a specific number of frames in the past, our current implementation uses a scene as it is defined in the NuScenes dataset to represent a single window. Based on these windows, we sample a specified number of evenly spaced frames. Since the current frame might be in the very beginning of the scene, this means that if we set our frames per scene number to <span class="math inline"><em>m</em></span> and the current frame is the <span class="math inline"><em>n</em><sup>th</sup></span> frame in the current window, we will get <span class="math inline"><em>m</em></span> frames for each window in the past and <span class="math inline">min (<em>n</em>, <em>m</em>)</span> frames for the current window. A further possibility for splitting the frames and the windows, that can be useful is using the similarity between the frames to sample more from areas with lower similarity and less from areas with higher similarity, then setting the window size to be a specific number of frames. We will however leave this option for future work.<br />
+<strong>Question-Classification with LLMs</strong> In the Nuscenes dataset, video material from six different camera angles around the ego car is available for each QA pair, but the necessary camera orientation is not pre-determined, requiring models to analyze all angles, which is computationally expensive. To address this, we employed Meta-Llama-3-8B-Instruct <span class="citation" data-cites="llama3modelcard"></span> as a classification agent to identify relevant camera orientations based on the question, enabling the video-to-text model to generate answers using only the necessary angles, thus enhancing efficiency (see figure <a href="#fig:classificationQ" data-reference-type="ref" data-reference="fig:classificationQ">7</a>).</p>
+<p>*<span>subsection</span><span>2</span><span>-8pt plus -2pt minus -2pt</span><span>6pt</span><span>-1em. Framework</span> We introduce a general framework for solving the autonomous-driving tasks proposed by our extended DriveLM dataset as shown in figure <a href="#fig:framework" data-reference-type="ref" data-reference="fig:framework">1</a>. To answer the VideoQA tasks, we aim to feed the vision language models with the video input in a streaming manner using text-based memory consolidation, which is similar to previous approaches using additive text-based memory that can be easily implemented with transformer models <span class="citation" data-cites="dai2019transformerxlattentivelanguagemodels"></span> <span class="citation" data-cites="petroni2019languagemodelsknowledgebases"></span> <span class="citation" data-cites="wu2019longtermfeaturebanksdetailed"></span>. Therefore, we introduce a specified memory prompt to integrate the model’s latest answer to the given question and the current video scene in the prediction for the next scene. We assume that each model’s answer to the current scene will implicitly contain information about previous scenes, which helps us to keep the number of tokens for each prompt approximately constant.</p>
+<figure>
+<img src="img/framework.png" alt="General Framework of our Approach" id="fig:framework" /><figcaption>General Framework of our Approach<span label="fig:framework"></span></figcaption>
+</figure>
+<p>*<span>subsection</span><span>2</span><span>-8pt plus -2pt minus -2pt</span><span>6pt</span><span>-1em. Models</span> For the implementation of our framework, we use the following two models: <em>InstructBLIP</em> and <em>Video-Llava</em> (model descriptions in the appendix <a href="#app:add_material" data-reference-type="ref" data-reference="app:add_material">[app:add_material]</a>).</p>
+<h3 id="instructblip">InstructBLIP</h3>
+<p><strong>Implementation of Memory</strong> As mentioned before, we implement a first memory approach based on text-based memory consolidation, where the model’s answer to scenes in the past is added to the input for the next scene (see figure <a href="#fig:framework" data-reference-type="ref" data-reference="fig:framework">1</a>). For InstructBLIP, we process frames in sequential order, providing the model with one frame at a time for a given question and reference video (list of frames) as shown in figure <a href="#fig:memory_instructBLIP" data-reference-type="ref" data-reference="fig:memory_instructBLIP">[fig:memory_instructBLIP]</a>. As a result, at every frame, the model outputs a generated text that forms its memory for the next frame. Reaching the final frame of the last scene (present), the question is answered. With an increasing number of frames per scene, this process requires longer computational processing.<br />
+<strong>In-Context-Learning for InstructBLIP</strong> We test the video version of InstructBLIP, with the framework illustrated in Figure <a href="#fig:memory_instructBLIP_incontext" data-reference-type="ref" data-reference="fig:memory_instructBLIP_incontext">[fig:memory_instructBLIP_incontext]</a>. This model processes videos by concatenating them along the time dimension to generate the output, without incorporating a solid memory structure. To address the out-of-distribution challenges encountered with driving videos, we use a model that was trained on Ego4D for training and then incorporate varying amounts of in-context examples from our dataset for each task. EILEV <span class="citation" data-cites="yu2023efficientincontextlearningvisionlanguage"></span> is a novel training method designed to promote in-context learning in vision-language models (VLMs) specifically for egocentric videos. This approach does not require extensive, naturalistic egocentric video datasets. Observations indicate that performance metrics improve as additional shot examples are included in the model. For our experiments, we standardize the frame per scene to 32 and set the window size to 0. Each video consists of 8 frames to maintain consistency with VideoLlava experiments. The memory structure utilized follows the previously described Video-Llava approach.</p>
+<h3 id="video-llava">Video-Llava</h3>
+<p><strong>Implementation of Memory</strong> For the Video-Llava model, we focus on video input only. Given a question, we present the videos from the required camera orientations in a scene-by-scene streaming manner to the model. The model processes the scene and tries to answer the prompted question. Then, we prompt the model with the next scene, the same question, and the generated answer from the previous scene to generate a new answer until the model has seen all scenes and generates a final answer (which is the latest generated answer). See figure <a href="#fig:memoryVLlava" data-reference-type="ref" data-reference="fig:memoryVLlava">8</a> in the appendix for visualization and figure <a href="#fig:promptVLlava" data-reference-type="ref" data-reference="fig:promptVLlava">[fig:promptVLlava]</a> for the exact prompt.<br />
+<strong>Handling Downsampling of Long Video Input</strong> As Video-Llava is uniformly sampling 8 frames from video input <span class="citation" data-cites="lin2023videollava"></span> (see figure <a href="#fig:standard_memoryVLlava" data-reference-type="ref" data-reference="fig:standard_memoryVLlava">[fig:standard_memoryVLlava]</a>, we lose information about the scene when providing videos consisting of more than 8 frames to the model. To ensure that the model is processing every frame of the scene when increasing the fps, we implement a video segment module that splits the incoming video into smaller 8-frame videos. By incorporating this mechanism as displayed in figure <a href="#fig:adjusted_memoryVLlava" data-reference-type="ref" data-reference="fig:adjusted_memoryVLlava">[fig:adjusted_memoryVLlava]</a>, we slightly increase the complexity of the implementation while processing all the frames of the current scene.</p>
+<p>*<span>section</span><span>1</span><span>-10pt plus -2pt minus -2pt</span><span>7pt</span><span><strong></strong></span><span>-1em. Experiments and Results</span> <span id="sec:experiments-results" label="sec:experiments-results">[sec:experiments-results]</span> In the following section, we introduce our experimental setup and present our results for Video-Llava and InstructBLIP.</p>
+<p>*<span>subsection</span><span>2</span><span>-8pt plus -2pt minus -2pt</span><span>6pt</span><span>-1em. Experimental Set Up</span> We introduce two different configurations for our experiments:</p>
+<ol>
+<li><p><strong>Changing Window Size</strong> For a fixed number of frames per scene (1, 2, 4, 8, 16), we vary the number of preceding scenes considered before the current scene. This configuration allows us to assess to what extent a larger video stream aids in reasoning about the questions.</p></li>
+<li><p><strong>Changing Frames Per Scene (Fps)</strong> For a fixed window size (0, 1, 2, 4, 8, 16), where window size 0 is the current scene only without previous/past information, we vary the number of frames per scene to determine the optimal amount of visual information needed to answer the questions accurately.</p></li>
+</ol>
+<p>*<span>subsection</span><span>2</span><span>-8pt plus -2pt minus -2pt</span><span>6pt</span><span>-1em. Evaluation Metrics</span> For evaluation purposes, we report the standard metrics in NLP to assess the quality of generated text: BLEU <span class="citation" data-cites="papineni-etal-2002-bleu"></span>, METEOR <span class="citation" data-cites="banerjee-lavie-2005-METEOR"></span>, ROUGE <span class="citation" data-cites="lin-2004-ROUGE"></span>, and BERTScore <span class="citation" data-cites="zhang2020BERTScoreevaluatingtextgeneration"></span>. While BLEU and ROUGE focus on lexical similarity, METEOR also considers some structural similarity such as word order. BERTScore gives a good semantic similarity by utilizing contextual embeddings based on BERT.<br />
+Furthermore, we implement the <em>LLMScore</em>, inspired by GPTScore <span class="citation" data-cites="fu-etal-2024-gptscore"></span>, to allow a fine-granular, multi-faceted evaluation. We utilize Llama-3-8B-Instruct <span class="citation" data-cites="llama3modelcard"></span> as the LLM. The evaluation result consists of an analysis and a score based on it, ranging from 0 (worst) to 10 (best) in 0.5 increments.</p>
+<p>*<span>subsection</span><span>2</span><span>-8pt plus -2pt minus -2pt</span><span>6pt</span><span>-1em. Quantitative Results</span> We report our results as line charts in figure <a href="#fig:video-llava_fps_w" data-reference-type="ref" data-reference="fig:video-llava_fps_w">[fig:video-llava_fps_w]</a> and <a href="#fig:comparison" data-reference-type="ref" data-reference="fig:comparison">[fig:comparison]</a>. Due to the long processing time for InstructBLIP, we only run the full set of experiments for Video-Llava. Here we report our results on BERTScore, METEOR, and LLMScore for a clear comparison. The first figure results from experiments on Video-Llava for different settings and the last chart denotes a comparison between Video-Llava and InsructBLIP.</p>
+<p><embed src="img/avg_meteor_FPS_plot.pdf" /></p>
+<p><embed src="img/avg_bertscore_f1_FPS_plot.pdf" /></p>
+<p><embed src="img/avg_lm_score_FPS_plot.pdf" /></p>
+<h3 id="comparison-on-metrics-and-tasks">Comparison on Metrics and Tasks</h3>
+<p>From figure <a href="#fig:video-llava_fps_w" data-reference-type="ref" data-reference="fig:video-llava_fps_w">[fig:video-llava_fps_w]</a> I. and II, we have a clear comparison between different metrics and tasks.</p>
+<p><strong>Metrics</strong> In general, we do not observe much difference across different settings apart from LLMScore. The reason behind this phenomenon is two-fold. First, the traditional similarity metrics cannot distinguish the differences in model output, as the generated text is similar in terms of both lexicon and semantics, hence showing the superiority of LLMScore. Second, the DriveLM dataset is domain-specific, which requires further adaption and modification of LLMScore.</p>
+<p><strong>Tasks</strong> Overall, the behavior task shows the best performance, followed by prediction. These two tasks have the most close-ended questions (MC and Y/N) with behavior consisting of only MC. This pattern shows a correlation with the percentage of open-ended questions in the task and we further analyze it in the next subsection.</p>
+<h3 id="instructblip-1">InstructBLIP</h3>
+<p>For InstructBLIP, we only report the results for the fps experiments for window size 0 per task (see table <a href="#tab:perf_frames_per_scene_iblip_behavior" data-reference-type="ref" data-reference="tab:perf_frames_per_scene_iblip_behavior">[tab:perf_frames_per_scene_iblip_behavior]</a>, <a href="#tab:perf_frames_per_scene_iblip_planning" data-reference-type="ref" data-reference="tab:perf_frames_per_scene_iblip_planning">[tab:perf_frames_per_scene_iblip_planning]</a>, <a href="#tab:perf_frames_per_scene_iblip_prediction" data-reference-type="ref" data-reference="tab:perf_frames_per_scene_iblip_prediction">[tab:perf_frames_per_scene_iblip_prediction]</a>, <a href="#tab:perf_frames_per_scene_iblip_perception" data-reference-type="ref" data-reference="tab:perf_frames_per_scene_iblip_perception">[tab:perf_frames_per_scene_iblip_perception]</a>).<br />
+In figure <a href="#fig:comparison" data-reference-type="ref" data-reference="fig:comparison">[fig:comparison]</a> I, we can observe that InstructBLIP performs worse than Video-Llava on almost all metrics and settings, making the latter the better model for our task. This is expected as InstructBLIP does not utilize the temporal and spatial memory in a video and just relies on text memory. Even when the window size is 0, InstructBLIP needs more processing time due to processing each frame individually.<br />
+Furthermore, we conducted experiments with In-context-learning for InstructBLIP, where we presented the model with a varying number of examples (question-answer pairs) when giving the question (see figure <a href="#fig:memory_instructBLIP_incontext" data-reference-type="ref" data-reference="fig:memory_instructBLIP_incontext">[fig:memory_instructBLIP_incontext]</a>). We report the results shown in figure <a href="#fig:in_context_InstructBLIP" data-reference-type="ref" data-reference="fig:in_context_InstructBLIP">[fig:in_context_InstructBLIP]</a> for all four tasks. Even though the deviation across the samples is large, there is an improvement when in-context examples are used, highlighting that In-context-learning seems to help with prediction and planning tasks the most, whereas it does not improve perception and behavior.</p>
+<figure>
+<img src="img/in_context_shots.png" alt="In-Context-Learning for InstructBLIP: LLMScore for different numbers of examples given" /><figcaption>In-Context-Learning for InstructBLIP: LLMScore for different numbers of examples given</figcaption>
+</figure>
+<p><span id="fig:in_context_InstructBLIP" label="fig:in_context_InstructBLIP">[fig:in_context_InstructBLIP]</span></p>
+<h3 id="video-llava-1">Video-Llava</h3>
+<p>As we did not fine-tune the model on our dataset, nor did we improve spatial and temporal understanding of the model, we achieved very low performance for tasks such as perception and planning which mostly contain open questions without predefined answer options (see table <a href="#tab:dataset_tasktypes" data-reference-type="ref" data-reference="tab:dataset_tasktypes">[tab:dataset_tasktypes]</a>). For behavior, the dataset consists of multiple-choice questions only, therefore, we get comparable better results for this task as the model only needs to reason about the given answer options (select one of 3 possible answers). As displayed in figure <a href="#fig:video-llava_fps_w" data-reference-type="ref" data-reference="fig:video-llava_fps_w">[fig:video-llava_fps_w]</a> I, our initial results show that tasks of behavior and planning profit from using higher window numbers in the past. These tasks’ performance also seems to initially increase when increasing the number of frames per scene but peaks at 8 frames per scene, which could be connected to the implementation of VideoLlava, as the original paper showcases better performance for 8 frames per second. This positive effect is absent in the tasks of prediction and perception, who profit from 2 fps, but whose LLM score worsens when inputting more than that. In figure <a href="#fig:video-llava_fps_w" data-reference-type="ref" data-reference="fig:video-llava_fps_w">[fig:video-llava_fps_w]</a> II, we observe the increase in window sizes helps behavior and prediction, which include most close-ended questions. It does not necessarily improve planning and perception with a lot of open-ended questions. These phenomena show room for improvement in our evaluation metrics, however, the increase shows the memory implementation can partially work.<br />
+The detailed results of the Video-Llava experiments for both configurations in tabular form can be found in the tables <a href="#tab:perf_frames_per_scene_videoLlava_behavior" data-reference-type="ref" data-reference="tab:perf_frames_per_scene_videoLlava_behavior">[tab:perf_frames_per_scene_videoLlava_behavior]</a>, <a href="#tab:perf_frames_per_scene_videoLlava_prediction" data-reference-type="ref" data-reference="tab:perf_frames_per_scene_videoLlava_prediction">[tab:perf_frames_per_scene_videoLlava_prediction]</a>, <a href="#tab:perf_frames_per_scene_videoLlava_planning" data-reference-type="ref" data-reference="tab:perf_frames_per_scene_videoLlava_planning">[tab:perf_frames_per_scene_videoLlava_planning]</a>, <a href="#tab:perf_frames_per_scene_videoLlava_perception" data-reference-type="ref" data-reference="tab:perf_frames_per_scene_videoLlava_perception">[tab:perf_frames_per_scene_videoLlava_perception]</a>, <a href="#tab:perf_window_size_videoLlava_behavior" data-reference-type="ref" data-reference="tab:perf_window_size_videoLlava_behavior">[tab:perf_window_size_videoLlava_behavior]</a>, <a href="#tab:perf_window_size_videoLlava_planning" data-reference-type="ref" data-reference="tab:perf_window_size_videoLlava_planning">[tab:perf_window_size_videoLlava_planning]</a>, <a href="#tab:perf_window_size_videoLlava_prediction" data-reference-type="ref" data-reference="tab:perf_window_size_videoLlava_prediction">[tab:perf_window_size_videoLlava_prediction]</a>, <a href="#tab:perf_window_size_videoLlava_perception" data-reference-type="ref" data-reference="tab:perf_window_size_videoLlava_perception">[tab:perf_window_size_videoLlava_perception]</a> in the appendix. Moreover, we also report ROUGE-L and BLEU in these tables.<br />
+*<span>subsection</span><span>2</span><span>-8pt plus -2pt minus -2pt</span><span>6pt</span><span>-1em. Qualitative Analysis</span> Looking into the detailed answers for each question and task, we report various difficulties and issues resulting from data quality, implementation decisions, and lastly, the implemented evaluation metrics, especially the LLMScore.<br />
+<strong>Dataset: Ambiguity</strong> Some questions taken from the DriveLM dataset are not very precise, leading to misinterpretation. In these cases, the model is unable to understand the intention of the question, generating too general answers or answers that direct attention to the false objects in the video. One example is the phrase “future state” (for example in prediction: <a href="#fig:ambiguity" data-reference-type="ref" data-reference="fig:ambiguity">2</a>), which is never specified in the context of the question. From the gold answers, we can conclude that prediction of the next action of the ego car is required. However, the term “state” itself describes a situation or circumstance the ego car might be in rather than an action it should perform. Consequently, the model predicts that the car is parked in front of a building rather than describing the action it has to take. To resolve this issue, the dataset quality needs to be improved: possible ways to achieve this can be question rewriting or question specification or adding multiple correct gold answers for each question to cover various scenarios shown in a scene.<br />
+<strong>Dataset: Answer Quality and Structure</strong> Similar to the previously mentioned point, the dataset also lacks some answer quality. As for many questions, the gold answers are very short - sometimes even one-word-answers - and it is hard to predict the correct answer and answer format (especially without fine-tuning the model). We show for InstructBLIP that In-Context-Learning can help to overcome these limitations (see figure <a href="#fig:in_context_InstructBLIP" data-reference-type="ref" data-reference="fig:in_context_InstructBLIP">[fig:in_context_InstructBLIP]</a>), however, rewriting and reformulating the answers might also be necessary to improve the model’s performance as well as fine-tuning.<br />
+<strong>Implementation: Dealing with Key Objects</strong> In various tasks, our models are presented with so-called <em>key objects</em> in string format as a part of the questions, e.g. <code>&lt;c3,CAM_FRONT_RIGHT,1517.5,495.0&gt;</code>. Based on the generated results, they are unable to make something out of these descriptions leading to inaccurate answers and hallucinations (see figure <a href="#fig:key_objects" data-reference-type="ref" data-reference="fig:key_objects">[fig:key_objects]</a>). We conclude that understanding and locating key objects mentioned in the question requires spatial and temporal reasoning capabilities that can primarily be obtained by fine-tuning. However, drawing the contained bounding boxes in the key frame or rewriting the questions with more specific descriptions of the objects might also give some more insights.<br />
+<strong>Implementation: Language Memory</strong> From our current experiments, we experience that the implemented textual memory consolidation might be insufficient for capturing speed or the direction of motion. Especially for InstructBLIP, where the model only gets frames one by one, we observe that the language memory itself is not fully capable of understanding temporal and spatial aspects that are important to answer the question.<br />
+<strong>LLMScore: Hallucinations</strong> A common problem with LLMs is <em>hallucination</em>, where the AI system generates information that is not based on the input data or real-world knowledge <span class="citation" data-cites="rawte2023surveyhallucinationlargefoundation"></span>. We also examined this phenomenon in conjunction with the analysis part of the LLMScore, which is the basis for the final score, when the provided analysis does not align with the generated answer. For instance <a href="#fig:hallucination" data-reference-type="ref" data-reference="fig:hallucination">3</a>, the LLM explains that something not being part of the generated answer is correct, awarding it incorrectly with a higher score.</p>
+<figure>
+<img src="img/METEOR_video-llava_fps.png" alt="Results for Video-Llava on METEOR, BERTScore, and LLMScore of I. different fps. The increase in fps does not improve performance. II. different window sizes. The increase in window sizes improves the performance of prediction and behavior" /><figcaption>Results for Video-Llava on METEOR, BERTScore, and LLMScore of<br />
+I. different fps. The increase in fps does not improve performance.<br />
+II. different window sizes. The increase in window sizes improves the performance of prediction and behavior</figcaption>
+</figure>
+<figure>
+<img src="img/METEOR_video-llava_w.png" alt="Results for Video-Llava on METEOR, BERTScore, and LLMScore of I. different fps. The increase in fps does not improve performance. II. different window sizes. The increase in window sizes improves the performance of prediction and behavior" /><figcaption>Results for Video-Llava on METEOR, BERTScore, and LLMScore of<br />
+I. different fps. The increase in fps does not improve performance.<br />
+II. different window sizes. The increase in window sizes improves the performance of prediction and behavior</figcaption>
+</figure>
+<figure>
+<img src="img/Bertscore_video-llava_fps.png" alt="Results for Video-Llava on METEOR, BERTScore, and LLMScore of I. different fps. The increase in fps does not improve performance. II. different window sizes. The increase in window sizes improves the performance of prediction and behavior" /><figcaption>Results for Video-Llava on METEOR, BERTScore, and LLMScore of<br />
+I. different fps. The increase in fps does not improve performance.<br />
+II. different window sizes. The increase in window sizes improves the performance of prediction and behavior</figcaption>
+</figure>
+<figure>
+<img src="img/BERTScore_video-llava_w.png" alt="Results for Video-Llava on METEOR, BERTScore, and LLMScore of I. different fps. The increase in fps does not improve performance. II. different window sizes. The increase in window sizes improves the performance of prediction and behavior" /><figcaption>Results for Video-Llava on METEOR, BERTScore, and LLMScore of<br />
+I. different fps. The increase in fps does not improve performance.<br />
+II. different window sizes. The increase in window sizes improves the performance of prediction and behavior</figcaption>
+</figure>
+<figure>
+<img src="img/LLM-Score_video-llava_fps.png" alt="Results for Video-Llava on METEOR, BERTScore, and LLMScore of I. different fps. The increase in fps does not improve performance. II. different window sizes. The increase in window sizes improves the performance of prediction and behavior" /><figcaption>Results for Video-Llava on METEOR, BERTScore, and LLMScore of<br />
+I. different fps. The increase in fps does not improve performance.<br />
+II. different window sizes. The increase in window sizes improves the performance of prediction and behavior</figcaption>
+</figure>
+<figure>
+<img src="img/LLM-Score_video-llava_w.png" alt="Results for Video-Llava on METEOR, BERTScore, and LLMScore of I. different fps. The increase in fps does not improve performance. II. different window sizes. The increase in window sizes improves the performance of prediction and behavior" /><figcaption>Results for Video-Llava on METEOR, BERTScore, and LLMScore of<br />
+I. different fps. The increase in fps does not improve performance.<br />
+II. different window sizes. The increase in window sizes improves the performance of prediction and behavior</figcaption>
+</figure>
+<p><span id="fig:video-llava_fps_w" label="fig:video-llava_fps_w">[fig:video-llava_fps_w]</span></p>
+<p><strong>LLMScore: Semantic Relations</strong> The LLMScore sometimes struggles to evaluate the generated output against the gold answer correctly on a semantic basis. We would expect the LLMScore to be able to deal with varying word choices by assessing the granularity of the meaning of the generated output compared to the gold response. However, if we are looking at the analysis in example <a href="#fig:semantic_relation" data-reference-type="ref" data-reference="fig:semantic_relation">[fig:semantic_relation]</a>, we can see that the LLM is unable to recognize “walking” as a form of movement and therefore, the response is accounted with a low score, although it is only a more specific answer than the expected gold answer. Instead, the generated answer should be evaluated based on whether it correctly addresses the pedestrian’s movement. Since “walking” is a form of movement and aligns with “moving”, the generated answer should be considered correct in terms of describing movement.<br />
+<strong>LLMScore: Score Discrepancies</strong> We experience that the LLMScore suffers from inconsistencies in evaluating similar question-answer pairs. Furthermore, it tends to be very strict in certain scenarios, where we as human evaluators would have been more generous. For instance, we encounter very low scores (1.0) for questions asking for probabilities, where the gold answer is “Low” and the model generates specific values, in most of the cases probabilities of 0.0. Whereas the LLMScore 1.0 suggests that the answer is almost entirely incorrect, the generated answer provides a concrete numerical probability (0.0), which could be interpreted as a specific instance of a “Low” probability, albeit an extreme one. It might be seen as an oversimplification or misinterpretation, but it does align with the concept of a very low probability <a href="#fig:probability" data-reference-type="ref" data-reference="fig:probability">4</a>. *<span>section</span><span>1</span><span>-10pt plus -2pt minus -2pt</span><span>7pt</span><span><strong></strong></span><span>-1em. Limitations and Future Work</span> <span id="sec:limitation-future-work" label="sec:limitation-future-work">[sec:limitation-future-work]</span> The constructed dataset is 54GB and exceeds that when video clips are passed to the model, instead of a list of frames. This hinders the processing of all the available data from NuScenes. Thus, we only use the DriveLM questions corresponding to the frames contained within the first keyframe blob of the NuScenes training data split. The input also excluded some features that were available from the original datasets, e.g. the information on the key objects featured in the keyframes or the LiDAR and sensor information from the NuScenes dataset. These could be included to further improve the performance of the model.<br />
+Regarding the LLM Agent’s memory, our initial implementation of the textual memory for InstructBLIP, where we concatenate the answers from the last timestamps and use them in the prompt of the current scene, causes the prompt to be too long, extending the processing times. This leads us to instead only use the answers of the previous timestamp, just as with VideoLlava, which might lead over time to loss of information. More sophisticated memory concepts, which involve smarter truncation or summarisation by an LLM might be helpful. Visual memory could be employed as well and enhanced using clustering. It could be interesting to experiment with external memory, as rule books and example scenarios are available and used to teach human drivers.<br />
+The models come with some inflexibilities that make it hard to run our experiments on the dataset without further adaptations. Furthermore, the models were trained with data from various but general settings. The base models seem to hallucinate on some questions as well, which might indicate the need for fine-tuning the LLM. These hallucinations further bring to our attention the need for refining the questions from the DriveLM dataset, as they occasionally seem too ambiguous even for a human reader. Finally, some flaws arise from the metric LLMScore, which prompts us to further experiment with the prompt template and few-shot settings, and fine-tune the LLM on the dataset for better evaluation. *<span>section</span><span>1</span><span>-10pt plus -2pt minus -2pt</span><span>7pt</span><span><strong></strong></span><span>-1em. Conclusion</span> <span id="sec:conclusion" label="sec:conclusion">[sec:conclusion]</span> In conclusion, our work presents a novel benchmark designed around various autonomous driving tasks and introduces LLM-based Agents grounded in diverse vision-language models. Key takeaways from our study include:</p>
+<ul>
+<li><p>Open-generation questions are more difficult to handle than multiple-choice or yes/no questions.</p></li>
+<li><p>There is no clear relationship between window size and model performance.</p></li>
+<li><p>The dataset may be biased, impacting the generalizability of results.</p></li>
+<li><p>There is a strong dependence on the last frame, indicating that the memory structure is not effectively accumulating information over time.</p></li>
+<li><p>For Video-Llava, 8 fps appears to be the optimal setting.</p></li>
+<li><p>Treating one video clip as one scene might oversimplify complex driving scenarios.</p></li>
+</ul>
+<p>Despite these advancements, several challenges remain. The evaluation metrics for open-ended and ambiguous questions with large answer spaces are not yet optimal. Computational overhead is significant, posing a challenge for real-time applications. The model’s performance is further constrained by the visual encoder’s lack of expressiveness needed for fine-grained object recognition. Additionally, the language memory mechanism remains overly simplistic, struggling to adequately capture and address the spatial and temporal intricacies present in video data. These unresolved issues highlight the need for continued research and development to enhance the efficacy and efficiency of autonomous driving systems.</p>
+<p>*<span>section</span><span>1</span><span>-10pt plus -2pt minus -2pt</span><span>7pt</span><span><strong></strong></span><span>-1em. Results</span></p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: center;"><strong>window size</strong></th>
+<th style="text-align: center;"><strong>fps</strong></th>
+<th style="text-align: center;"><strong>BLEU</strong></th>
+<th style="text-align: center;"><strong>METEOR</strong></th>
+<th style="text-align: center;"><strong>RougeL</strong></th>
+<th style="text-align: center;"><strong>BERT F1</strong></th>
+<th style="text-align: center;"><strong>SPICE</strong></th>
+<th style="text-align: center;"><strong>LLMScore</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.306</td>
+<td style="text-align: center;">0.701</td>
+<td style="text-align: center;">0.510</td>
+<td style="text-align: center;">0.905</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.315</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.313</td>
+<td style="text-align: center;">0.703</td>
+<td style="text-align: center;">0.520</td>
+<td style="text-align: center;">0.906</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>6.750</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.302</td>
+<td style="text-align: center;">0.662</td>
+<td style="text-align: center;">0.496</td>
+<td style="text-align: center;">0.903</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.800</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.330</td>
+<td style="text-align: center;">0.689</td>
+<td style="text-align: center;">0.528</td>
+<td style="text-align: center;">0.907</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.195</td>
+</tr>
+</tbody>
+</table>
+<p><span id="tab:perf_frames_per_scene_iblip_behavior" label="tab:perf_frames_per_scene_iblip_behavior">[tab:perf_frames_per_scene_iblip_behavior]</span></p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: center;"><strong>window size</strong></th>
+<th style="text-align: center;"><strong>fps</strong></th>
+<th style="text-align: center;"><strong>BLEU</strong></th>
+<th style="text-align: center;"><strong>METEOR</strong></th>
+<th style="text-align: center;"><strong>RougeL</strong></th>
+<th style="text-align: center;"><strong>BERT F1</strong></th>
+<th style="text-align: center;"><strong>SPICE</strong></th>
+<th style="text-align: center;"><strong>LLMScore</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.029</td>
+<td style="text-align: center;">0.236</td>
+<td style="text-align: center;">0.172</td>
+<td style="text-align: center;">0.878</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.520</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.020</td>
+<td style="text-align: center;">0.236</td>
+<td style="text-align: center;">0.160</td>
+<td style="text-align: center;">0.873</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.800</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.020</td>
+<td style="text-align: center;">0.237</td>
+<td style="text-align: center;">0.158</td>
+<td style="text-align: center;">0.873</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.925</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.019</td>
+<td style="text-align: center;">0.234</td>
+<td style="text-align: center;">0.156</td>
+<td style="text-align: center;">0.872</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>2.950</strong></td>
+</tr>
+</tbody>
+</table>
+<p><span id="tab:perf_frames_per_scene_iblip_planning" label="tab:perf_frames_per_scene_iblip_planning">[tab:perf_frames_per_scene_iblip_planning]</span></p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: center;"><strong>window size</strong></th>
+<th style="text-align: center;"><strong>fps</strong></th>
+<th style="text-align: center;"><strong>BLEU</strong></th>
+<th style="text-align: center;"><strong>METEOR</strong></th>
+<th style="text-align: center;"><strong>RougeL</strong></th>
+<th style="text-align: center;"><strong>BERT F1</strong></th>
+<th style="text-align: center;"><strong>SPICE</strong></th>
+<th style="text-align: center;"><strong>LLMScore</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.162</td>
+<td style="text-align: center;">0.038</td>
+<td style="text-align: center;">0.892</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">1.120</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.161</td>
+<td style="text-align: center;">0.037</td>
+<td style="text-align: center;">0.891</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">1.170</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.157</td>
+<td style="text-align: center;">0.034</td>
+<td style="text-align: center;">0.891</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">1.265</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.161</td>
+<td style="text-align: center;">0.036</td>
+<td style="text-align: center;">0.890</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>1.355</strong></td>
+</tr>
+</tbody>
+</table>
+<p><span id="tab:perf_frames_per_scene_iblip_prediction" label="tab:perf_frames_per_scene_iblip_prediction">[tab:perf_frames_per_scene_iblip_prediction]</span></p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: center;"><strong>window size</strong></th>
+<th style="text-align: center;"><strong>fps</strong></th>
+<th style="text-align: center;"><strong>BLEU</strong></th>
+<th style="text-align: center;"><strong>METEOR</strong></th>
+<th style="text-align: center;"><strong>RougeL</strong></th>
+<th style="text-align: center;"><strong>BERT F1</strong></th>
+<th style="text-align: center;"><strong>SPICE</strong></th>
+<th style="text-align: center;"><strong>LLMScore</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.037</td>
+<td style="text-align: center;">0.371</td>
+<td style="text-align: center;">0.305</td>
+<td style="text-align: center;">0.895</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>3.330</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.036</td>
+<td style="text-align: center;">0.348</td>
+<td style="text-align: center;">0.276</td>
+<td style="text-align: center;">0.893</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.090</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.036</td>
+<td style="text-align: center;">0.337</td>
+<td style="text-align: center;">0.257</td>
+<td style="text-align: center;">0.892</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.930</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.036</td>
+<td style="text-align: center;">0.342</td>
+<td style="text-align: center;">0.261</td>
+<td style="text-align: center;">0.892</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.950</td>
+</tr>
+</tbody>
+</table>
+<p><span id="tab:perf_frames_per_scene_iblip_perception" label="tab:perf_frames_per_scene_iblip_perception">[tab:perf_frames_per_scene_iblip_perception]</span></p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: center;"><strong>window size</strong></th>
+<th style="text-align: center;"><strong>fps</strong></th>
+<th style="text-align: center;"><strong>BLEU</strong></th>
+<th style="text-align: center;"><strong>METEOR</strong></th>
+<th style="text-align: center;"><strong>RougeL</strong></th>
+<th style="text-align: center;"><strong>BERT F1</strong></th>
+<th style="text-align: center;"><strong>SPICE</strong></th>
+<th style="text-align: center;"><strong>LLMScore</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.669</td>
+<td style="text-align: center;">0.844</td>
+<td style="text-align: center;">0.809</td>
+<td style="text-align: center;">0.972</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.303</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.682</td>
+<td style="text-align: center;">0.851</td>
+<td style="text-align: center;">0.816</td>
+<td style="text-align: center;">0.973</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.091</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.686</td>
+<td style="text-align: center;">0.853</td>
+<td style="text-align: center;">0.818</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.500</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.694</td>
+<td style="text-align: center;">0.857</td>
+<td style="text-align: center;">0.824</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>6.616</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.687</td>
+<td style="text-align: center;">0.853</td>
+<td style="text-align: center;">0.821</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.096</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.678</td>
+<td style="text-align: center;">0.849</td>
+<td style="text-align: center;">0.814</td>
+<td style="text-align: center;">0.973</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.086</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.687</td>
+<td style="text-align: center;">0.855</td>
+<td style="text-align: center;">0.821</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.253</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.693</td>
+<td style="text-align: center;">0.858</td>
+<td style="text-align: center;">0.824</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.293</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.700</td>
+<td style="text-align: center;">0.858</td>
+<td style="text-align: center;">0.826</td>
+<td style="text-align: center;">0.975</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>6.702</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.679</td>
+<td style="text-align: center;">0.849</td>
+<td style="text-align: center;">0.816</td>
+<td style="text-align: center;">0.973</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.101</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.694</td>
+<td style="text-align: center;">0.859</td>
+<td style="text-align: center;">0.826</td>
+<td style="text-align: center;">0.975</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.323</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.683</td>
+<td style="text-align: center;">0.852</td>
+<td style="text-align: center;">0.818</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.192</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.692</td>
+<td style="text-align: center;">0.857</td>
+<td style="text-align: center;">0.823</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.404</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.705</td>
+<td style="text-align: center;">0.861</td>
+<td style="text-align: center;">0.829</td>
+<td style="text-align: center;">0.975</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>6.808</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.665</td>
+<td style="text-align: center;">0.843</td>
+<td style="text-align: center;">0.807</td>
+<td style="text-align: center;">0.972</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.975</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.680</td>
+<td style="text-align: center;">0.850</td>
+<td style="text-align: center;">0.816</td>
+<td style="text-align: center;">0.973</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.121</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.678</td>
+<td style="text-align: center;">0.851</td>
+<td style="text-align: center;">0.817</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.101</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.686</td>
+<td style="text-align: center;">0.853</td>
+<td style="text-align: center;">0.819</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.303</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.694</td>
+<td style="text-align: center;">0.857</td>
+<td style="text-align: center;">0.823</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>6.768</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.672</td>
+<td style="text-align: center;">0.847</td>
+<td style="text-align: center;">0.810</td>
+<td style="text-align: center;">0.973</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.081</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.689</td>
+<td style="text-align: center;">0.854</td>
+<td style="text-align: center;">0.820</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.576</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.697</td>
+<td style="text-align: center;">0.859</td>
+<td style="text-align: center;">0.826</td>
+<td style="text-align: center;">0.975</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.692</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.700</td>
+<td style="text-align: center;">0.859</td>
+<td style="text-align: center;">0.825</td>
+<td style="text-align: center;">0.975</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong><em>6.818</em></strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.695</td>
+<td style="text-align: center;">0.857</td>
+<td style="text-align: center;">0.824</td>
+<td style="text-align: center;">0.975</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.717</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.686</td>
+<td style="text-align: center;">0.856</td>
+<td style="text-align: center;">0.821</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.672</td>
+</tr>
+</tbody>
+</table>
+<p><span id="tab:perf_frames_per_scene_videoLlava_behavior" label="tab:perf_frames_per_scene_videoLlava_behavior">[tab:perf_frames_per_scene_videoLlava_behavior]</span></p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: center;"><strong>fps</strong></th>
+<th style="text-align: center;"><strong>window size</strong></th>
+<th style="text-align: center;"><strong>BLEU</strong></th>
+<th style="text-align: center;"><strong>METEOR</strong></th>
+<th style="text-align: center;"><strong>RougeL</strong></th>
+<th style="text-align: center;"><strong>BERT F1</strong></th>
+<th style="text-align: center;"><strong>SPICE</strong></th>
+<th style="text-align: center;"><strong>LLMScore</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0.669</td>
+<td style="text-align: center;">0.844</td>
+<td style="text-align: center;">0.809</td>
+<td style="text-align: center;">0.972</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.303</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.678</td>
+<td style="text-align: center;">0.849</td>
+<td style="text-align: center;">0.814</td>
+<td style="text-align: center;">0.973</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.086</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.675</td>
+<td style="text-align: center;">0.849</td>
+<td style="text-align: center;">0.813</td>
+<td style="text-align: center;">0.973</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.045</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.694</td>
+<td style="text-align: center;">0.859</td>
+<td style="text-align: center;">0.826</td>
+<td style="text-align: center;">0.975</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.323</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.680</td>
+<td style="text-align: center;">0.850</td>
+<td style="text-align: center;">0.816</td>
+<td style="text-align: center;">0.973</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.121</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.689</td>
+<td style="text-align: center;">0.854</td>
+<td style="text-align: center;">0.820</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>6.576</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0.686</td>
+<td style="text-align: center;">0.853</td>
+<td style="text-align: center;">0.818</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.500</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.693</td>
+<td style="text-align: center;">0.858</td>
+<td style="text-align: center;">0.824</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.293</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.690</td>
+<td style="text-align: center;">0.855</td>
+<td style="text-align: center;">0.821</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.298</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.692</td>
+<td style="text-align: center;">0.857</td>
+<td style="text-align: center;">0.823</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.404</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.686</td>
+<td style="text-align: center;">0.853</td>
+<td style="text-align: center;">0.819</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.303</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.700</td>
+<td style="text-align: center;">0.859</td>
+<td style="text-align: center;">0.825</td>
+<td style="text-align: center;">0.975</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong><em>6.818</em></strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0.694</td>
+<td style="text-align: center;">0.857</td>
+<td style="text-align: center;">0.824</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.616</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.700</td>
+<td style="text-align: center;">0.858</td>
+<td style="text-align: center;">0.826</td>
+<td style="text-align: center;">0.975</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.702</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.697</td>
+<td style="text-align: center;">0.857</td>
+<td style="text-align: center;">0.824</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.692</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.705</td>
+<td style="text-align: center;">0.861</td>
+<td style="text-align: center;">0.829</td>
+<td style="text-align: center;">0.975</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>6.808</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.694</td>
+<td style="text-align: center;">0.857</td>
+<td style="text-align: center;">0.823</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.768</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.695</td>
+<td style="text-align: center;">0.857</td>
+<td style="text-align: center;">0.824</td>
+<td style="text-align: center;">0.975</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.717</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0.687</td>
+<td style="text-align: center;">0.853</td>
+<td style="text-align: center;">0.821</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.096</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.679</td>
+<td style="text-align: center;">0.849</td>
+<td style="text-align: center;">0.816</td>
+<td style="text-align: center;">0.973</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.101</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.670</td>
+<td style="text-align: center;">0.844</td>
+<td style="text-align: center;">0.810</td>
+<td style="text-align: center;">0.972</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.035</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.665</td>
+<td style="text-align: center;">0.843</td>
+<td style="text-align: center;">0.807</td>
+<td style="text-align: center;">0.972</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.975</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.672</td>
+<td style="text-align: center;">0.847</td>
+<td style="text-align: center;">0.810</td>
+<td style="text-align: center;">0.973</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">6.081</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.686</td>
+<td style="text-align: center;">0.856</td>
+<td style="text-align: center;">0.821</td>
+<td style="text-align: center;">0.974</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>6.672</strong></td>
+</tr>
+</tbody>
+</table>
+<p><span id="tab:perf_window_size_videoLlava_behavior" label="tab:perf_window_size_videoLlava_behavior">[tab:perf_window_size_videoLlava_behavior]</span></p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: center;"><strong>window size</strong></th>
+<th style="text-align: center;"><strong>fps</strong></th>
+<th style="text-align: center;"><strong>BLEU</strong></th>
+<th style="text-align: center;"><strong>METEOR</strong></th>
+<th style="text-align: center;"><strong>RougeL</strong></th>
+<th style="text-align: center;"><strong>BERT F1</strong></th>
+<th style="text-align: center;"><strong>SPICE</strong></th>
+<th style="text-align: center;"><strong>LLMScore</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.015</td>
+<td style="text-align: center;">0.289</td>
+<td style="text-align: center;">0.207</td>
+<td style="text-align: center;">0.883</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.848</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.015</td>
+<td style="text-align: center;">0.290</td>
+<td style="text-align: center;">0.213</td>
+<td style="text-align: center;">0.885</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.242</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.015</td>
+<td style="text-align: center;">0.286</td>
+<td style="text-align: center;">0.214</td>
+<td style="text-align: center;">0.885</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>3.333</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.017</td>
+<td style="text-align: center;">0.283</td>
+<td style="text-align: center;">0.206</td>
+<td style="text-align: center;">0.884</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.990</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.016</td>
+<td style="text-align: center;">0.289</td>
+<td style="text-align: center;">0.209</td>
+<td style="text-align: center;">0.886</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.293</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.014</td>
+<td style="text-align: center;">0.284</td>
+<td style="text-align: center;">0.208</td>
+<td style="text-align: center;">0.883</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.944</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.016</td>
+<td style="text-align: center;">0.280</td>
+<td style="text-align: center;">0.208</td>
+<td style="text-align: center;">0.884</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>3.258</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.018</td>
+<td style="text-align: center;">0.286</td>
+<td style="text-align: center;">0.209</td>
+<td style="text-align: center;">0.884</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.207</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.016</td>
+<td style="text-align: center;">0.279</td>
+<td style="text-align: center;">0.204</td>
+<td style="text-align: center;">0.884</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.101</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.016</td>
+<td style="text-align: center;">0.280</td>
+<td style="text-align: center;">0.204</td>
+<td style="text-align: center;">0.883</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.187</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.018</td>
+<td style="text-align: center;">0.285</td>
+<td style="text-align: center;">0.205</td>
+<td style="text-align: center;">0.884</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.081</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.017</td>
+<td style="text-align: center;">0.288</td>
+<td style="text-align: center;">0.207</td>
+<td style="text-align: center;">0.885</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.985</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.018</td>
+<td style="text-align: center;">0.286</td>
+<td style="text-align: center;">0.211</td>
+<td style="text-align: center;">0.887</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.141</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.018</td>
+<td style="text-align: center;">0.284</td>
+<td style="text-align: center;">0.209</td>
+<td style="text-align: center;">0.885</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong><em>3.449</em></strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.018</td>
+<td style="text-align: center;">0.277</td>
+<td style="text-align: center;">0.206</td>
+<td style="text-align: center;">0.883</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.081</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.016</td>
+<td style="text-align: center;">0.286</td>
+<td style="text-align: center;">0.205</td>
+<td style="text-align: center;">0.883</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.121</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.020</td>
+<td style="text-align: center;">0.290</td>
+<td style="text-align: center;">0.212</td>
+<td style="text-align: center;">0.886</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.051</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.015</td>
+<td style="text-align: center;">0.289</td>
+<td style="text-align: center;">0.204</td>
+<td style="text-align: center;">0.884</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.222</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.014</td>
+<td style="text-align: center;">0.285</td>
+<td style="text-align: center;">0.205</td>
+<td style="text-align: center;">0.884</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>3.399</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.018</td>
+<td style="text-align: center;">0.282</td>
+<td style="text-align: center;">0.206</td>
+<td style="text-align: center;">0.883</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.217</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.016</td>
+<td style="text-align: center;">0.286</td>
+<td style="text-align: center;">0.205</td>
+<td style="text-align: center;">0.883</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.843</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.020</td>
+<td style="text-align: center;">0.290</td>
+<td style="text-align: center;">0.212</td>
+<td style="text-align: center;">0.886</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.051</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.015</td>
+<td style="text-align: center;">0.289</td>
+<td style="text-align: center;">0.204</td>
+<td style="text-align: center;">0.884</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.222</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.014</td>
+<td style="text-align: center;">0.285</td>
+<td style="text-align: center;">0.205</td>
+<td style="text-align: center;">0.884</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>3.399</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.018</td>
+<td style="text-align: center;">0.282</td>
+<td style="text-align: center;">0.206</td>
+<td style="text-align: center;">0.883</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.217</td>
+</tr>
+</tbody>
+</table>
+<p><span id="tab:perf_frames_per_scene_videoLlava_planning" label="tab:perf_frames_per_scene_videoLlava_planning">[tab:perf_frames_per_scene_videoLlava_planning]</span></p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: center;"><strong>fps</strong></th>
+<th style="text-align: center;"><strong>window size</strong></th>
+<th style="text-align: center;"><strong>BLEU</strong></th>
+<th style="text-align: center;"><strong>METEOR</strong></th>
+<th style="text-align: center;"><strong>RougeL</strong></th>
+<th style="text-align: center;"><strong>BERT F1</strong></th>
+<th style="text-align: center;"><strong>SPICE</strong></th>
+<th style="text-align: center;"><strong>LLMScore</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0.015</td>
+<td style="text-align: center;">0.289</td>
+<td style="text-align: center;">0.207</td>
+<td style="text-align: center;">0.883</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.848</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.014</td>
+<td style="text-align: center;">0.284</td>
+<td style="text-align: center;">0.208</td>
+<td style="text-align: center;">0.883</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.944</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.015</td>
+<td style="text-align: center;">0.284</td>
+<td style="text-align: center;">0.207</td>
+<td style="text-align: center;">0.883</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.909</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.018</td>
+<td style="text-align: center;">0.285</td>
+<td style="text-align: center;">0.205</td>
+<td style="text-align: center;">0.884</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.081</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.016</td>
+<td style="text-align: center;">0.286</td>
+<td style="text-align: center;">0.205</td>
+<td style="text-align: center;">0.883</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>3.121</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.016</td>
+<td style="text-align: center;">0.286</td>
+<td style="text-align: center;">0.205</td>
+<td style="text-align: center;">0.883</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.843</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0.015</td>
+<td style="text-align: center;">0.286</td>
+<td style="text-align: center;">0.214</td>
+<td style="text-align: center;">0.885</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>3.333</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.018</td>
+<td style="text-align: center;">0.286</td>
+<td style="text-align: center;">0.209</td>
+<td style="text-align: center;">0.884</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.207</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.017</td>
+<td style="text-align: center;">0.272</td>
+<td style="text-align: center;">0.204</td>
+<td style="text-align: center;">0.884</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.793</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.018</td>
+<td style="text-align: center;">0.286</td>
+<td style="text-align: center;">0.211</td>
+<td style="text-align: center;">0.887</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.141</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.015</td>
+<td style="text-align: center;">0.289</td>
+<td style="text-align: center;">0.204</td>
+<td style="text-align: center;">0.884</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.222</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.015</td>
+<td style="text-align: center;">0.289</td>
+<td style="text-align: center;">0.204</td>
+<td style="text-align: center;">0.884</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.222</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0.017</td>
+<td style="text-align: center;">0.283</td>
+<td style="text-align: center;">0.206</td>
+<td style="text-align: center;">0.884</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.990</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.016</td>
+<td style="text-align: center;">0.279</td>
+<td style="text-align: center;">0.204</td>
+<td style="text-align: center;">0.884</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.101</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.016</td>
+<td style="text-align: center;">0.282</td>
+<td style="text-align: center;">0.205</td>
+<td style="text-align: center;">0.884</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.354</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.018</td>
+<td style="text-align: center;">0.284</td>
+<td style="text-align: center;">0.209</td>
+<td style="text-align: center;">0.885</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong><em>3.449</em></strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.014</td>
+<td style="text-align: center;">0.285</td>
+<td style="text-align: center;">0.205</td>
+<td style="text-align: center;">0.884</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.399</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.014</td>
+<td style="text-align: center;">0.285</td>
+<td style="text-align: center;">0.205</td>
+<td style="text-align: center;">0.884</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.399</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0.016</td>
+<td style="text-align: center;">0.289</td>
+<td style="text-align: center;">0.209</td>
+<td style="text-align: center;">0.886</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>3.293</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.016</td>
+<td style="text-align: center;">0.280</td>
+<td style="text-align: center;">0.204</td>
+<td style="text-align: center;">0.883</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.187</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.016</td>
+<td style="text-align: center;">0.283</td>
+<td style="text-align: center;">0.203</td>
+<td style="text-align: center;">0.884</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.843</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.018</td>
+<td style="text-align: center;">0.277</td>
+<td style="text-align: center;">0.206</td>
+<td style="text-align: center;">0.883</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.081</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.018</td>
+<td style="text-align: center;">0.282</td>
+<td style="text-align: center;">0.206</td>
+<td style="text-align: center;">0.883</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.217</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.018</td>
+<td style="text-align: center;">0.282</td>
+<td style="text-align: center;">0.206</td>
+<td style="text-align: center;">0.883</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.217</td>
+</tr>
+</tbody>
+</table>
+<p><span id="tab:perf_window_size_videoLlava_planning" label="tab:perf_window_size_videoLlava_planning">[tab:perf_window_size_videoLlava_planning]</span></p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: center;"><strong>window size</strong></th>
+<th style="text-align: center;"><strong>fps</strong></th>
+<th style="text-align: center;"><strong>BLEU</strong></th>
+<th style="text-align: center;"><strong>METEOR</strong></th>
+<th style="text-align: center;"><strong>RougeL</strong></th>
+<th style="text-align: center;"><strong>BERT F1</strong></th>
+<th style="text-align: center;"><strong>SPICE</strong></th>
+<th style="text-align: center;"><strong>LLMScore</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.002</td>
+<td style="text-align: center;">0.494</td>
+<td style="text-align: center;">0.450</td>
+<td style="text-align: center;">0.909</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">4.803</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.498</td>
+<td style="text-align: center;">0.463</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.449</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.496</td>
+<td style="text-align: center;">0.461</td>
+<td style="text-align: center;">0.909</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">4.904</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.497</td>
+<td style="text-align: center;">0.462</td>
+<td style="text-align: center;">0.909</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.040</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.499</td>
+<td style="text-align: center;">0.462</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>5.848</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.495</td>
+<td style="text-align: center;">0.452</td>
+<td style="text-align: center;">0.909</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">4.813</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.498</td>
+<td style="text-align: center;">0.463</td>
+<td style="text-align: center;">0.909</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.646</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.495</td>
+<td style="text-align: center;">0.462</td>
+<td style="text-align: center;">0.909</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.556</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.003</td>
+<td style="text-align: center;">0.487</td>
+<td style="text-align: center;">0.449</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>5.843</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.002</td>
+<td style="text-align: center;">0.492</td>
+<td style="text-align: center;">0.450</td>
+<td style="text-align: center;">0.911</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.732</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.498</td>
+<td style="text-align: center;">0.454</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">4.611</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.004</td>
+<td style="text-align: center;">0.503</td>
+<td style="text-align: center;">0.464</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong><em>5.970</em></strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.002</td>
+<td style="text-align: center;">0.497</td>
+<td style="text-align: center;">0.454</td>
+<td style="text-align: center;">0.911</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.682</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.002</td>
+<td style="text-align: center;">0.505</td>
+<td style="text-align: center;">0.454</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.591</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.002</td>
+<td style="text-align: center;">0.501</td>
+<td style="text-align: center;">0.462</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.505</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.496</td>
+<td style="text-align: center;">0.454</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">4.894</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.002</td>
+<td style="text-align: center;">0.495</td>
+<td style="text-align: center;">0.454</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>5.864</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.003</td>
+<td style="text-align: center;">0.496</td>
+<td style="text-align: center;">0.452</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.818</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.002</td>
+<td style="text-align: center;">0.497</td>
+<td style="text-align: center;">0.451</td>
+<td style="text-align: center;">0.908</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.379</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.002</td>
+<td style="text-align: center;">0.489</td>
+<td style="text-align: center;">0.450</td>
+<td style="text-align: center;">0.908</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.470</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.496</td>
+<td style="text-align: center;">0.454</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.470</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.002</td>
+<td style="text-align: center;">0.495</td>
+<td style="text-align: center;">0.454</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>5.864</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.003</td>
+<td style="text-align: center;">0.496</td>
+<td style="text-align: center;">0.452</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.818</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.002</td>
+<td style="text-align: center;">0.497</td>
+<td style="text-align: center;">0.451</td>
+<td style="text-align: center;">0.908</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.379</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.002</td>
+<td style="text-align: center;">0.489</td>
+<td style="text-align: center;">0.450</td>
+<td style="text-align: center;">0.908</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.470</td>
+</tr>
+</tbody>
+</table>
+<p><span id="tab:perf_frames_per_scene_videoLlava_prediction" label="tab:perf_frames_per_scene_videoLlava_prediction">[tab:perf_frames_per_scene_videoLlava_prediction]</span></p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: center;"><strong>fps</strong></th>
+<th style="text-align: center;"><strong>window size</strong></th>
+<th style="text-align: center;"><strong>BLEU</strong></th>
+<th style="text-align: center;"><strong>METEOR</strong></th>
+<th style="text-align: center;"><strong>RougeL</strong></th>
+<th style="text-align: center;"><strong>BERT F1</strong></th>
+<th style="text-align: center;"><strong>SPICE</strong></th>
+<th style="text-align: center;"><strong>LLMScore</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0.002</td>
+<td style="text-align: center;">0.494</td>
+<td style="text-align: center;">0.450</td>
+<td style="text-align: center;">0.909</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">4.803</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.495</td>
+<td style="text-align: center;">0.452</td>
+<td style="text-align: center;">0.909</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">4.813</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.494</td>
+<td style="text-align: center;">0.451</td>
+<td style="text-align: center;">0.909</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">4.561</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.498</td>
+<td style="text-align: center;">0.454</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">4.611</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.496</td>
+<td style="text-align: center;">0.454</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">4.894</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.496</td>
+<td style="text-align: center;">0.454</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>5.470</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.496</td>
+<td style="text-align: center;">0.461</td>
+<td style="text-align: center;">0.909</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">4.904</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.495</td>
+<td style="text-align: center;">0.462</td>
+<td style="text-align: center;">0.909</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.556</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.491</td>
+<td style="text-align: center;">0.454</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.631</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.002</td>
+<td style="text-align: center;">0.497</td>
+<td style="text-align: center;">0.454</td>
+<td style="text-align: center;">0.911</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.682</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.003</td>
+<td style="text-align: center;">0.496</td>
+<td style="text-align: center;">0.452</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>5.818</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.003</td>
+<td style="text-align: center;">0.496</td>
+<td style="text-align: center;">0.452</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>5.818</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.497</td>
+<td style="text-align: center;">0.462</td>
+<td style="text-align: center;">0.909</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.040</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.003</td>
+<td style="text-align: center;">0.487</td>
+<td style="text-align: center;">0.449</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>5.843</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.002</td>
+<td style="text-align: center;">0.497</td>
+<td style="text-align: center;">0.458</td>
+<td style="text-align: center;">0.912</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.727</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.002</td>
+<td style="text-align: center;">0.505</td>
+<td style="text-align: center;">0.454</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.591</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.002</td>
+<td style="text-align: center;">0.497</td>
+<td style="text-align: center;">0.451</td>
+<td style="text-align: center;">0.908</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.379</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.002</td>
+<td style="text-align: center;">0.497</td>
+<td style="text-align: center;">0.451</td>
+<td style="text-align: center;">0.908</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.379</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.499</td>
+<td style="text-align: center;">0.462</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong><em>5.848</em></strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.002</td>
+<td style="text-align: center;">0.492</td>
+<td style="text-align: center;">0.450</td>
+<td style="text-align: center;">0.911</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.732</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.001</td>
+<td style="text-align: center;">0.497</td>
+<td style="text-align: center;">0.453</td>
+<td style="text-align: center;">0.911</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.510</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.002</td>
+<td style="text-align: center;">0.501</td>
+<td style="text-align: center;">0.462</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.505</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.002</td>
+<td style="text-align: center;">0.489</td>
+<td style="text-align: center;">0.450</td>
+<td style="text-align: center;">0.908</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.470</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.002</td>
+<td style="text-align: center;">0.489</td>
+<td style="text-align: center;">0.450</td>
+<td style="text-align: center;">0.908</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">5.470</td>
+</tr>
+</tbody>
+</table>
+<p><span id="tab:perf_window_size_videoLlava_prediction" label="tab:perf_window_size_videoLlava_prediction">[tab:perf_window_size_videoLlava_prediction]</span></p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: center;"><strong>window size</strong></th>
+<th style="text-align: center;"><strong>fps</strong></th>
+<th style="text-align: center;"><strong>BLEU</strong></th>
+<th style="text-align: center;"><strong>METEOR</strong></th>
+<th style="text-align: center;"><strong>RougeL</strong></th>
+<th style="text-align: center;"><strong>BERT F1</strong></th>
+<th style="text-align: center;"><strong>SPICE</strong></th>
+<th style="text-align: center;"><strong>LLMScore</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.046</td>
+<td style="text-align: center;">0.381</td>
+<td style="text-align: center;">0.293</td>
+<td style="text-align: center;">0.905</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.934</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.041</td>
+<td style="text-align: center;">0.390</td>
+<td style="text-align: center;">0.300</td>
+<td style="text-align: center;">0.905</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.116</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.053</td>
+<td style="text-align: center;">0.401</td>
+<td style="text-align: center;">0.318</td>
+<td style="text-align: center;">0.907</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong><em>3.298</em></strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.045</td>
+<td style="text-align: center;">0.389</td>
+<td style="text-align: center;">0.299</td>
+<td style="text-align: center;">0.906</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.131</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.069</td>
+<td style="text-align: center;">0.372</td>
+<td style="text-align: center;">0.286</td>
+<td style="text-align: center;">0.909</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.268</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.046</td>
+<td style="text-align: center;">0.388</td>
+<td style="text-align: center;">0.303</td>
+<td style="text-align: center;">0.906</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.631</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.049</td>
+<td style="text-align: center;">0.395</td>
+<td style="text-align: center;">0.306</td>
+<td style="text-align: center;">0.906</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.955</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.054</td>
+<td style="text-align: center;">0.395</td>
+<td style="text-align: center;">0.310</td>
+<td style="text-align: center;">0.907</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>3.015</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.074</td>
+<td style="text-align: center;">0.392</td>
+<td style="text-align: center;">0.300</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.005</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.086</td>
+<td style="text-align: center;">0.384</td>
+<td style="text-align: center;">0.287</td>
+<td style="text-align: center;">0.911</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.308</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.047</td>
+<td style="text-align: center;">0.384</td>
+<td style="text-align: center;">0.294</td>
+<td style="text-align: center;">0.906</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.869</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.075</td>
+<td style="text-align: center;">0.401</td>
+<td style="text-align: center;">0.316</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>3.025</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.082</td>
+<td style="text-align: center;">0.397</td>
+<td style="text-align: center;">0.316</td>
+<td style="text-align: center;">0.911</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.682</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.091</td>
+<td style="text-align: center;">0.395</td>
+<td style="text-align: center;">0.302</td>
+<td style="text-align: center;">0.912</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.616</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.085</td>
+<td style="text-align: center;">0.385</td>
+<td style="text-align: center;">0.287</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.242</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.049</td>
+<td style="text-align: center;">0.394</td>
+<td style="text-align: center;">0.306</td>
+<td style="text-align: center;">0.907</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>2.818</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.088</td>
+<td style="text-align: center;">0.413</td>
+<td style="text-align: center;">0.331</td>
+<td style="text-align: center;">0.911</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.768</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.083</td>
+<td style="text-align: center;">0.394</td>
+<td style="text-align: center;">0.309</td>
+<td style="text-align: center;">0.911</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.626</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.077</td>
+<td style="text-align: center;">0.374</td>
+<td style="text-align: center;">0.292</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.525</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.077</td>
+<td style="text-align: center;">0.376</td>
+<td style="text-align: center;">0.281</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.571</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.049</td>
+<td style="text-align: center;">0.394</td>
+<td style="text-align: center;">0.306</td>
+<td style="text-align: center;">0.907</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>2.813</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.088</td>
+<td style="text-align: center;">0.413</td>
+<td style="text-align: center;">0.331</td>
+<td style="text-align: center;">0.911</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.768</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.083</td>
+<td style="text-align: center;">0.394</td>
+<td style="text-align: center;">0.309</td>
+<td style="text-align: center;">0.911</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.626</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.077</td>
+<td style="text-align: center;">0.374</td>
+<td style="text-align: center;">0.292</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.525</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.077</td>
+<td style="text-align: center;">0.376</td>
+<td style="text-align: center;">0.281</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.571</td>
+</tr>
+</tbody>
+</table>
+<p><span id="tab:perf_frames_per_scene_videoLlava_perception" label="tab:perf_frames_per_scene_videoLlava_perception">[tab:perf_frames_per_scene_videoLlava_perception]</span></p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: center;"><strong>fps</strong></th>
+<th style="text-align: center;"><strong>window size</strong></th>
+<th style="text-align: center;"><strong>BLEU</strong></th>
+<th style="text-align: center;"><strong>METEOR</strong></th>
+<th style="text-align: center;"><strong>RougeL</strong></th>
+<th style="text-align: center;"><strong>BERT F1</strong></th>
+<th style="text-align: center;"><strong>SPICE</strong></th>
+<th style="text-align: center;"><strong>LLMScore</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0.046</td>
+<td style="text-align: center;">0.381</td>
+<td style="text-align: center;">0.293</td>
+<td style="text-align: center;">0.905</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>2.934</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.046</td>
+<td style="text-align: center;">0.388</td>
+<td style="text-align: center;">0.303</td>
+<td style="text-align: center;">0.906</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.631</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.047</td>
+<td style="text-align: center;">0.387</td>
+<td style="text-align: center;">0.301</td>
+<td style="text-align: center;">0.906</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.470</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.047</td>
+<td style="text-align: center;">0.384</td>
+<td style="text-align: center;">0.294</td>
+<td style="text-align: center;">0.906</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.869</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.049</td>
+<td style="text-align: center;">0.394</td>
+<td style="text-align: center;">0.306</td>
+<td style="text-align: center;">0.907</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.818</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.049</td>
+<td style="text-align: center;">0.394</td>
+<td style="text-align: center;">0.306</td>
+<td style="text-align: center;">0.907</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.813</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0.053</td>
+<td style="text-align: center;">0.401</td>
+<td style="text-align: center;">0.318</td>
+<td style="text-align: center;">0.907</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong><em>3.298</em></strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.054</td>
+<td style="text-align: center;">0.395</td>
+<td style="text-align: center;">0.310</td>
+<td style="text-align: center;">0.907</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.015</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.082</td>
+<td style="text-align: center;">0.397</td>
+<td style="text-align: center;">0.313</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.783</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.082</td>
+<td style="text-align: center;">0.397</td>
+<td style="text-align: center;">0.316</td>
+<td style="text-align: center;">0.911</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.682</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.083</td>
+<td style="text-align: center;">0.394</td>
+<td style="text-align: center;">0.309</td>
+<td style="text-align: center;">0.911</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.626</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.083</td>
+<td style="text-align: center;">0.394</td>
+<td style="text-align: center;">0.309</td>
+<td style="text-align: center;">0.911</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.626</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0.045</td>
+<td style="text-align: center;">0.389</td>
+<td style="text-align: center;">0.299</td>
+<td style="text-align: center;">0.906</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>3.131</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.074</td>
+<td style="text-align: center;">0.392</td>
+<td style="text-align: center;">0.300</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">3.005</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.084</td>
+<td style="text-align: center;">0.393</td>
+<td style="text-align: center;">0.299</td>
+<td style="text-align: center;">0.911</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.106</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.091</td>
+<td style="text-align: center;">0.395</td>
+<td style="text-align: center;">0.302</td>
+<td style="text-align: center;">0.912</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.616</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.077</td>
+<td style="text-align: center;">0.374</td>
+<td style="text-align: center;">0.292</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.525</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.077</td>
+<td style="text-align: center;">0.374</td>
+<td style="text-align: center;">0.292</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.525</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0</td>
+<td style="text-align: center;">0.069</td>
+<td style="text-align: center;">0.372</td>
+<td style="text-align: center;">0.286</td>
+<td style="text-align: center;">0.909</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.268</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">0.086</td>
+<td style="text-align: center;">0.384</td>
+<td style="text-align: center;">0.287</td>
+<td style="text-align: center;">0.911</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.308</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">2</td>
+<td style="text-align: center;">0.076</td>
+<td style="text-align: center;">0.377</td>
+<td style="text-align: center;">0.283</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.035</td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">4</td>
+<td style="text-align: center;">0.085</td>
+<td style="text-align: center;">0.385</td>
+<td style="text-align: center;">0.287</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;">2.242</td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">8</td>
+<td style="text-align: center;">0.077</td>
+<td style="text-align: center;">0.376</td>
+<td style="text-align: center;">0.281</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>2.571</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">16</td>
+<td style="text-align: center;">0.077</td>
+<td style="text-align: center;">0.376</td>
+<td style="text-align: center;">0.281</td>
+<td style="text-align: center;">0.910</td>
+<td style="text-align: center;">0.000</td>
+<td style="text-align: center;"><strong>2.571</strong></td>
+</tr>
+</tbody>
+</table>
+<p><span id="tab:perf_window_size_videoLlava_perception" label="tab:perf_window_size_videoLlava_perception">[tab:perf_window_size_videoLlava_perception]</span></p>
+<p>*<span>section</span><span>1</span><span>-10pt plus -2pt minus -2pt</span><span>7pt</span><span><strong></strong></span><span>-1em. Qualitative Examples</span></p>
+<figure>
+<img src="img/ambiguity.png" alt="Example Ambiguity: Question 54 (Prediction)- Video-Llava, w=8, fps=8" id="fig:ambiguity" /><figcaption>Example <em>Ambiguity</em>: Question 54 (Prediction)- Video-Llava, w=8, fps=8<span label="fig:ambiguity"></span></figcaption>
+</figure>
+<figure>
+<img src="img/semantic_relation.png" alt="Example Semantic Relations: Question 1 (Perception) - Video-Llava, w=16, fps=16" /><figcaption>Example <em>Semantic Relations</em>: Question 1 (Perception) - Video-Llava, w=16, fps=16</figcaption>
+</figure>
+<p><span id="fig:semantic_relation" label="fig:semantic_relation">[fig:semantic_relation]</span></p>
+<figure>
+<img src="img/hallucination.png" alt="Example Hallucination: Question 641 (Behavior) - Video-Llava, w=2, fps=8" id="fig:hallucination" /><figcaption>Example <em>Hallucination</em>: Question 641 (Behavior) - Video-Llava, w=2, fps=8<span label="fig:hallucination"></span></figcaption>
+</figure>
+<figure>
+<img src="img/probability.png" alt="Example Score Discrepancies: Question 86 (Planning) - Video-Llava, w=0, fps=4" id="fig:probability" /><figcaption>Example <em>Score Discrepancies</em>: Question 86 (Planning) - Video-Llava, w=0, fps=4<span label="fig:probability"></span></figcaption>
+</figure>
+<figure>
+<img src="img/key_objects.png" alt="Example Key Objects: Question 30 (Perception)- Video-Llava, w=2, fps=16" /><figcaption>Example <em>Key Objects</em>: Question 30 (Perception)- Video-Llava, w=2, fps=16</figcaption>
+</figure>
+<p><span id="fig:key_objects" label="fig:key_objects">[fig:key_objects]</span></p>
+<p>*<span>section</span><span>1</span><span>-10pt plus -2pt minus -2pt</span><span>7pt</span><span><strong></strong></span><span>-1em. Additional Material</span> <span id="app:add_material" label="app:add_material">[app:add_material]</span></p>
+<p><strong>InstructBLIP</strong> <span class="citation" data-cites="dai2023instructblipgeneralpurposevisionlanguagemodels"></span> model builds on the capabilities of BLIP (Bootstrapping Language-Image Pre-training) <span class="citation" data-cites="li2022blipbootstrappinglanguageimagepretraining"></span> and BLIP2 <span class="citation" data-cites="li2023blip2bootstrappinglanguageimagepretraining"></span> and instruction tuning.</p>
+<p>BLIP is a Vision Learning Pre-training framework that has a multimodal encoder that can work as an image-grounded text encoder or a text-grounded image encoder. BLIP-2 "bootstraps" the vision language pre-training using off-the-shelf frozen image encoders and frozen large language models. To convert the image encodings to meaningful embeddings to an LLM, they use a Querying Transformer (Q-Former) instead of having the multimodal encoder from BLIP. This Q-Former extracts the most relevant information from the images and forwards them to an LLM. BLIP2 encodes the images independently from the task. That means the task in the form of the text input is not considered during the encoding of the image. InstructBLIP uses the task instruction while encoding the image and obtains visual representations that are most fitting to the task. In Figure <a href="#fig:iblip" data-reference-type="ref" data-reference="fig:iblip">5</a>, instruction is used in image encoding.</p>
+<figure>
+<img src="img/iblip.png" alt="InstructBLIP framework from ." id="fig:iblip" style="width:45.0%" /><figcaption>InstructBLIP framework from <span class="citation" data-cites="dai2023instructblipgeneralpurposevisionlanguagemodels"></span>.<span label="fig:iblip"></span></figcaption>
+</figure>
+<p><strong>Video-Llava</strong> As a second model, we use <em>Video-Llava</em> <span class="citation" data-cites="lin2023videollava"></span> without any further fine-tuning in an off-the-shelf manner. As a main advantage, Video-Llava can process both images and video as input modality. By using LanguageBind encoders <span class="citation" data-cites="zhu2024languagebind"></span>, which are capable of mapping different modalities into the textual feature space, the large language model (Vicuna-7B v1.5, fine-tuned from Llama 2 <span class="citation" data-cites="zheng2023judgingllmasajudgemtbenchchatbot"></span>) can learn from a unified visual representation of the input modalities (see figure <a href="#fig:videoLlava" data-reference-type="ref" data-reference="fig:videoLlava">6</a>).</p>
+<figure>
+<img src="img/Video-Llava.png" alt="The Video-Llava framework from " id="fig:videoLlava" style="width:45.0%" /><figcaption>The Video-Llava framework from <span class="citation" data-cites="lin2023videollava"></span><span label="fig:videoLlava"></span></figcaption>
+</figure>
+<p>Video-Llava is trained in two stages, an understanding training phase and an instruction tuning phase. For video input, it is important to note that Video-Llava uniformly samples 8 frames from the video which leads to a limited understanding of longer videos (see figure <a href="#fig:standard_memoryVLlava" data-reference-type="ref" data-reference="fig:standard_memoryVLlava">[fig:standard_memoryVLlava]</a>).<br />
+Based on the quantitative evaluation from <span class="citation" data-cites="lin2023videollava"></span> for zero-shot image question-answering on MMBench, LLaVA-Bench, and MM-Ve, Video-Llava outperforms InstructBLIP-7B by 24.9%. Moreover, Video-LLaVA-7B surpasses InstructBLIP-13B by 6.4% on MM-Vet, IDEFICS-80B and MMBench. This shows Video-Llavas’s strong capabilities in semantical understanding of the provided scenes and giving well-phrased and free-form natural language answers to questions.<br />
+</p>
+<figure>
+<img src="img/classification_process.png" alt="Question-Classification Process with Meta-Llama-3-8B-Instruct" id="fig:classificationQ" style="width:45.0%" /><figcaption>Question-Classification Process with Meta-Llama-3-8B-Instruct<span label="fig:classificationQ"></span></figcaption>
+</figure>
+<p><span>see <span class="citation" data-cites="llama3modelcard"></span></span></p>
+<figure>
+<img src="img/instructblip_memory.png" alt="Text-based memory consolidation for InstructBLIP and extended DriveLM dataset" style="width:80.0%" /><figcaption>Text-based memory consolidation for InstructBLIP and extended DriveLM dataset</figcaption>
+</figure>
+<p><span id="fig:memory_instructBLIP" label="fig:memory_instructBLIP">[fig:memory_instructBLIP]</span></p>
+<figure>
+<img src="img/instructblip_incontext_memory.png" alt="Text-based memory consolidation for InstructBLIP with In-Context-Learning and extended DriveLM dataset" style="width:80.0%" /><figcaption>Text-based memory consolidation for InstructBLIP with In-Context-Learning and extended DriveLM dataset</figcaption>
+</figure>
+<p><span id="fig:memory_instructBLIP_incontext" label="fig:memory_instructBLIP_incontext">[fig:memory_instructBLIP_incontext]</span></p>
+<pre><code>&quot;This is what you know about the scene so far: {memory}&quot; + 
+f&quot;USER: &lt;video&gt; You will see a video from the ego car&#39;s perspective: {perspective} 
+QUESTION: {question} Be as precise as possible. ASSISTANT:&quot;</code></pre>
+<figure>
+<img src="img/memory_video-llava.png" alt="Text-based memory consolidation for Video-Llava and extended DriveLM dataset" id="fig:memoryVLlava" style="width:80.0%" /><figcaption>Text-based memory consolidation for Video-Llava and extended DriveLM dataset<span label="fig:memoryVLlava"></span></figcaption>
+</figure>
+<figure>
+<img src="img/video-llava_standard.png" alt="Standard Video Processing in Video-Llava: Uniformly sampling 8 frames from input videos" style="width:80.0%" /><figcaption>Standard Video Processing in Video-Llava: Uniformly sampling 8 frames from input videos</figcaption>
+</figure>
+<p><span id="fig:standard_memoryVLlava" label="fig:standard_memoryVLlava">[fig:standard_memoryVLlava]</span></p>
+<figure>
+<img src="img/video-llava_framelists.png" alt="Handling video input with Video-Llava for our framework" style="width:80.0%" /><figcaption>Handling video input with Video-Llava for our framework</figcaption>
+</figure>
+<p><span id="fig:adjusted_memoryVLlava" label="fig:adjusted_memoryVLlava">[fig:adjusted_memoryVLlava]</span></p>
+</body>
+</html>
